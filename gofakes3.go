@@ -60,8 +60,6 @@ func New(dbname string) *GoFakeS3 {
 		log.Fatal(err)
 	}
 
-	log.Println("locals3 db created or opened")
-
 	timeLocation, err := time.LoadLocation("GMT")
 	if err != nil {
 		log.Fatal(err)
@@ -111,14 +109,12 @@ func (s *WithCORS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	re := regexp.MustCompile("(127.0.0.1:\\d{1,7})|(.localhost:\\d{1,7})|(localhost:\\d{1,7})")
 	bucket := re.ReplaceAllString(r.Host, "")
 	if len(bucket) > 0 {
-		log.Println("rewrite bucket ->", bucket)
 		p := r.URL.Path
 		r.URL.Path = "/" + bucket
 		if p != "/" {
 			r.URL.Path += p
 		}
 	}
-	log.Println("=>", r.URL)
 
 	s.r.ServeHTTP(w, r)
 }
@@ -148,12 +144,8 @@ func (g *GoFakeS3) GetBuckets(w http.ResponseWriter, r *http.Request) {
 
 // GetBucket lists the contents of a bucket.
 func (g *GoFakeS3) GetBucket(w http.ResponseWriter, r *http.Request) {
-	log.Println("GET BUCKET")
 	vars := mux.Vars(r)
 	bucketName := vars["BucketName"]
-
-	log.Println("bucketname:", bucketName)
-	log.Println("prefix    :", r.URL.Query().Get("prefix"))
 
 	g.storage.View(func(tx *bolt.Tx) error {
 		// Assume bucket exists and has keys
@@ -203,7 +195,6 @@ func (g *GoFakeS3) GetBucket(w http.ResponseWriter, r *http.Request) {
 func (g *GoFakeS3) CreateBucket(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	bucketName := vars["BucketName"]
-	log.Println("CREATE BUCKET:", bucketName)
 
 	g.storage.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucket([]byte(bucketName))
@@ -211,7 +202,6 @@ func (g *GoFakeS3) CreateBucket(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bucket existed", http.StatusBadRequest)
 			return err
 		}
-		log.Println("bucket created")
 		w.Header().Set("Host", r.Header.Get("Host"))
 		w.Header().Set("Location", "/"+bucketName)
 		w.Write([]byte{})
@@ -228,12 +218,9 @@ func (g *GoFakeS3) DeleteBucket(w http.ResponseWriter, r *http.Request) {
 func (g *GoFakeS3) HeadBucket(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	bucketName := vars["BucketName"]
-	log.Println("HEAD BUCKET", bucketName)
-	log.Println("bucketname:", bucketName)
 	g.storage.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
 		if b == nil {
-			log.Println("no bucket")
 			http.Error(w, "bucket does not exist", http.StatusNotFound)
 		}
 		w.Header().Set("x-amz-id-2", "LriYPLdmOdAiIfgSm/F1YsViT1LW94/xUQxMsF7xiEb1a0wiIOIxl+zbwZ163pt7")
@@ -246,29 +233,23 @@ func (g *GoFakeS3) HeadBucket(w http.ResponseWriter, r *http.Request) {
 
 // GetObject retrievs a bucket object.
 func (g *GoFakeS3) GetObject(w http.ResponseWriter, r *http.Request) {
-	log.Println("GET OBJECT")
 	vars := mux.Vars(r)
 	bucketName := vars["BucketName"]
-	log.Println("Bucket:", bucketName)
-	log.Println("└── Object:", vars["ObjectName"])
 
 	g.storage.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
 		if b == nil {
-			log.Println("no bucket")
 			http.Error(w, "bucket does not exist", http.StatusNotFound)
 		}
 		v := b.Get([]byte(vars["ObjectName"]))
 
 		if v == nil {
-			log.Println("no object")
 			http.Error(w, "object does not exist", http.StatusInternalServerError)
 			return nil
 		}
 		t := Object{}
 		err := bson.Unmarshal(v, &t)
 		if err != nil {
-			log.Println(err)
 			panic(err)
 		}
 		hash := md5.Sum(t.Obj)
@@ -289,7 +270,6 @@ func (g *GoFakeS3) GetObject(w http.ResponseWriter, r *http.Request) {
 
 // CreateObject (Browser Upload) creates a new S3 object.
 func (g *GoFakeS3) CreateObjectBrowserUpload(w http.ResponseWriter, r *http.Request) {
-	log.Println("CREATE OBJECT THROUGH BROWSER UPLOAD")
 	const _24K = (1 << 20) * 24
 	if err := r.ParseMultipartForm(_24K); nil != err {
 		panic(err)
@@ -298,8 +278,6 @@ func (g *GoFakeS3) CreateObjectBrowserUpload(w http.ResponseWriter, r *http.Requ
 	bucketName := vars["BucketName"]
 	key := r.MultipartForm.Value["key"][0]
 
-	log.Println("(BUC)", bucketName)
-	log.Println("(KEY)", key)
 	fileHeader := r.MultipartForm.File["file"][0]
 	infile, err := fileHeader.Open()
 	if nil != err {
@@ -311,7 +289,6 @@ func (g *GoFakeS3) CreateObjectBrowserUpload(w http.ResponseWriter, r *http.Requ
 	}
 
 	meta := make(map[string]string)
-	log.Println(r.MultipartForm)
 	for hk, hv := range r.MultipartForm.Value {
 		if strings.Contains(hk, "X-Amz-") {
 			meta[hk] = hv[0]
@@ -324,11 +301,9 @@ func (g *GoFakeS3) CreateObjectBrowserUpload(w http.ResponseWriter, r *http.Requ
 	g.storage.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
 		if b == nil {
-			log.Println("no bucket")
 			http.Error(w, "bucket does not exist", http.StatusNotFound)
 			return nil
 		}
-		log.Println("bucket", bucketName, "found")
 		data, err := bson.Marshal(obj)
 		if err != nil {
 			panic(err)
@@ -353,7 +328,6 @@ func (g *GoFakeS3) CreateObject(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	bucketName := vars["BucketName"]
 
-	log.Println("CREATE OBJECT:", bucketName, vars["ObjectName"])
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		panic(err)
@@ -372,11 +346,9 @@ func (g *GoFakeS3) CreateObject(w http.ResponseWriter, r *http.Request) {
 	g.storage.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
 		if b == nil {
-			log.Println("no bucket")
 			http.Error(w, "bucket does not exist", http.StatusNotFound)
 			return nil
 		}
-		log.Println("bucket", bucketName, "found")
 		data, err := bson.Marshal(obj)
 		if err != nil {
 			panic(err)
@@ -403,22 +375,17 @@ func (g *GoFakeS3) DeleteObject(w http.ResponseWriter, r *http.Request) {
 
 // HeadObject retrieves only meta information of an object and not the whole.
 func (g *GoFakeS3) HeadObject(w http.ResponseWriter, r *http.Request) {
-	log.Println("HEAD OBJECT")
 	vars := mux.Vars(r)
 	bucketName := vars["BucketName"]
-	log.Println("Bucket:", bucketName)
-	log.Println("└── Object:", vars["ObjectName"])
 
 	g.storage.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
 		if b == nil {
-			log.Println("no bucket")
 			http.Error(w, "bucket does not exist", http.StatusNotFound)
 		}
 		v := b.Get([]byte(vars["ObjectName"]))
 
 		if v == nil {
-			log.Println("no object")
 			http.Error(w, "object does not exist", http.StatusInternalServerError)
 		}
 		t := Object{}
