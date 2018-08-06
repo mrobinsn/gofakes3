@@ -77,9 +77,11 @@ func (g *GoFakeS3) Server() http.Handler {
 	// BUCKET
 	r.HandleFunc("/", g.GetBuckets).Methods("GET")
 	r.HandleFunc("/{BucketName}", g.GetBucket).Methods("GET")
+	r.HandleFunc("/{BucketName}/", g.GetBucket).Methods("GET")
 	r.HandleFunc("/{BucketName}", g.CreateBucket).Methods("PUT")
 	r.HandleFunc("/{BucketName}", g.DeleteBucket).Methods("DELETE")
 	r.HandleFunc("/{BucketName}", g.HeadBucket).Methods("HEAD")
+	r.HandleFunc("/{BucketName}/", g.HeadBucket).Methods("HEAD")
 	// OBJECT
 	r.HandleFunc("/{BucketName}/", g.CreateObjectBrowserUpload).Methods("POST")
 	r.HandleFunc("/{BucketName}/{ObjectName:.{1,}}", g.GetObject).Methods("GET")
@@ -275,7 +277,7 @@ func (g *GoFakeS3) GetObject(w http.ResponseWriter, r *http.Request) {
 		for mk, mv := range t.Metadata {
 			w.Header().Set(mk, mv)
 		}
-		w.Header().Set("Last-Modified", g.timeNow().Format("Mon, 2 Jan 2006 15:04:05 MST"))
+		w.Header().Set("Last-Modified", g.timeNow().Format(http.TimeFormat))
 		w.Header().Set("ETag", "\""+hex.EncodeToString(hash[:])+"\"")
 		w.Header().Set("Server", "AmazonS3")
 		w.Header().Set("Content-Length", fmt.Sprintf("%v", len(t.Obj)))
@@ -430,7 +432,7 @@ func (g *GoFakeS3) HeadObject(w http.ResponseWriter, r *http.Request) {
 		for mk, mv := range t.Metadata {
 			w.Header().Set(mk, mv)
 		}
-		w.Header().Set("Last-Modified", t.Metadata["Last-Modified"])
+		w.Header().Set("Last-Modified", g.timeNow().Format(http.TimeFormat))
 		w.Header().Set("ETag", "\""+hex.EncodeToString(hash[:])+"\"")
 		w.Header().Set("Server", "AmazonS3")
 		w.Write([]byte{})
